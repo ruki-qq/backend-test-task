@@ -1,0 +1,8 @@
+from core.database.models.chat_bot import ChatBot
+from core.database.models.dialogue import Dialogue, DialogueMessage
+
+__all__ = [
+    "ChatBot",
+    "Dialogue",
+    "DialogueMessage",
+]
