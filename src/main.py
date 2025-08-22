@@ -12,9 +12,10 @@ def main() -> None:
     uvicorn.run(
         "app.app:app",
         log_config=get_uvicorn_log_config(),
-        port=80,
-        host="0.0.0.0",  # noqa: S104
+        port=8000,
+        host="0.0.0.0",
         workers=settings.server.workers,
+        reload=True,
     )
 
 

@@ -5,8 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MongoSettings(BaseModel):
-    url: Annotated[str, MongoDsn]
-    db_name: str
+    url: Annotated[str, MongoDsn] = "mongodb://localhost:27017"
+    db_name: str = "chatbot_test"
 
 
 class ServerSettings(BaseModel):
@@ -21,8 +21,8 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
     )
 
-    mongo: MongoSettings
+    mongo: MongoSettings = MongoSettings()
     server: ServerSettings = ServerSettings()
 
 
-settings = Settings()  # type: ignore[call-arg]
+settings = Settings()

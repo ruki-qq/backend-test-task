@@ -20,6 +20,6 @@ class UvicornHandler(logging.Handler):
             depth += 1
 
         if record.name == "uvicorn.access":
-            level = "REQUEST"
+            level = "INFO"
 
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
