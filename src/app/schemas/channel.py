@@ -41,7 +41,7 @@ class ChannelResponse(BaseModel):
     name: str
     chat_bot_id: str
     webhook_url: HttpUrl
-    is_active: bool
+    is_active: bool | None
     token: str
 
     @classmethod

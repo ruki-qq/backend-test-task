@@ -1,3 +1,4 @@
+import asyncio
 from beanie import init_beanie
 from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -17,8 +18,4 @@ async def initialize_database() -> None:
             Dialogue,
         ],
     )
-    chat_bot = ChatBot(name="TestBot", secret_token="test_token_123")
-    await chat_bot.insert()
     logger.success("DB is ready!")
-    
-    return chat_bot.id

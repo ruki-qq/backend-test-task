@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MongoSettings(BaseModel):
-    url: Annotated[str, MongoDsn] = "mongodb://localhost:27017"
+    url: Annotated[str, MongoDsn] = "mongodb://172.27.32.1:27017"
     db_name: str = "chatbot_test"
 
 

@@ -1,54 +1,17 @@
 import asyncio
 import functools
-from typing import Callable, Any
-from httpx import AsyncClient, ASGITransport
-from core.database import initialize_database
+from typing import Any, Callable
+
+from httpx import ASGITransport, AsyncClient
+
 from app.app import app
-
-
-def with_async_client(func: Callable) -> Callable:
-    """
-    Decorator that creates an async client and manages the event loop for tests.
-    
-    This decorator:
-    1. Initializes the database
-    2. Creates an AsyncClient with the test app
-    3. Manages the event loop properly
-    4. Passes the client to the test function
-    
-    Usage:
-        @with_async_client
-        def test_something():
-            async def _test(client: AsyncClient):
-                # Your test logic here
-                response = await client.get("/api/endpoint")
-                assert response.status_code == 200
-            
-            return _test
-    """
-    
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        # Get the inner async function
-        inner_func = func(*args, **kwargs)
-        
-        # Create a new event loop for this test
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            # Run the async test
-            return loop.run_until_complete(inner_func)
-        finally:
-            loop.close()
-    
-    return wrapper
+from core.database import initialize_database
+from core.database.models.chat_bot import ChatBot
 
 
 def create_test_client() -> AsyncClient:
     """
-    Helper function to create a test client.
-    Use this inside your async test functions.
+    Функция для создания клиентов для тестов.
     """
     return AsyncClient(
         transport=ASGITransport(app=app),
@@ -59,86 +22,72 @@ def create_test_client() -> AsyncClient:
 
 def with_database_and_client(func: Callable) -> Callable:
     """
-    Decorator that handles database initialization and async client creation.
-    
-    This decorator:
-    1. Initializes the database
-    2. Creates an AsyncClient with the test app
-    3. Manages the event loop properly
-    4. Passes the client to the test function
-    5. Automatically cleans up the database after each test
-    
-    Usage:
+    Декоратор, который инициализирует БД и создает асинхронного клиента.
+
+    Использование:
         @with_database_and_client
         def test_something():
             async def _test(client: AsyncClient):
                 # Your test logic here
                 response = await client.get("/api/endpoint")
                 assert response.status_code == 200
-            
+
             return _test
     """
-    
+
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        # Get the inner async function
         inner_func = func(*args, **kwargs)
-        
-        # Create a new event loop for this test
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         async def setup_and_run():
-            # Initialize database
             await initialize_database()
-            
-            # Create test client and run the test
+            chat_bot = ChatBot(name="TestBot", secret_token="test_token_123")
+            await chat_bot.insert()
+            kwargs["chat_bot_id"] = str(chat_bot.id)
             async with create_test_client() as client:
-                return await inner_func(client)
-        
+                return await inner_func(client, **kwargs)
+
         try:
-            # Run the async test
             return loop.run_until_complete(setup_and_run())
         finally:
             loop.close()
-    
+
     return wrapper
 
 
 def with_database_setup(func: Callable) -> Callable:
     """
-    Decorator that only handles database initialization.
-    Use this when you need to create your own client or don't need a client.
-    
-    Usage:
+    Декоратор, инициализирующий БД.
+    Используется, если необходимо создать своего клиента или клиент не нужен.
+
+    Использование:
         @with_database_setup
         def test_something():
             async def _test():
                 # Your test logic here
-            
+
             return _test
     """
-    
+
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        # Get the inner async function
         inner_func = func(*args, **kwargs)
-        
-        # Create a new event loop for this test
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         async def setup_and_run():
-            # Initialize database
             await initialize_database()
-            
-            # Run the test
-            return await inner_func()
-        
+            chat_bot = ChatBot(name="SimpleTestBot", secret_token="simple_token_123")
+            await chat_bot.insert()
+            return await inner_func(chat_bot=chat_bot)
+
         try:
-            # Run the async test
             return loop.run_until_complete(setup_and_run())
         finally:
             loop.close()
-    
+
     return wrapper

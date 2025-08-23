@@ -13,8 +13,10 @@ class MessageRole(StrEnum):
 class DialogueMessage(BaseModel):
     role: MessageRole
     text: str
+    message_id: str | None = None
 
 
 class Dialogue(Document):
     chat_bot_id: PydanticObjectId
+    chat_id: str
     message_list: list[DialogueMessage] = []
