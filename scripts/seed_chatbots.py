@@ -16,15 +16,14 @@ def _ensure_src_on_sys_path() -> None:
 _ensure_src_on_sys_path()
 
 
-from core.database.registry import initialize_database  # noqa: E402
-from core.database.models import ChatBot  # noqa: E402
+from core.database.registry import initialize_database
+from core.database.models import ChatBot
 
 
 async def create_chatbots(names: List[str]) -> List[ChatBot]:
     created: List[ChatBot] = []
 
     for name in names:
-        # If a bot with the same name exists, skip creating a duplicate
         existing = await ChatBot.find_one(ChatBot.name == name)
         if existing:
             created.append(existing)
@@ -104,5 +103,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

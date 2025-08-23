@@ -36,6 +36,24 @@ class ChatService:
         return token_value
 
     @staticmethod
+    async def verify_chat_token(
+        token: str | None = Header(default=None, alias="chat_token")
+    ) -> str:
+        """Проверяет chat_token канала из заголовка chat_token"""
+        header_val = token
+        if not header_val:
+            raise HTTPException(status_code=401, detail="chat_token header is required")
+        if not isinstance(header_val, str) or not header_val.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authorization header format, should be Bearer token",
+            )
+        token_value = header_val[7:]
+        if not token_value:
+            raise ValueError("Token is required")
+        return token_value
+
+    @staticmethod
     async def process_webhook_message(
         message_data: MessageWebhook, chat_bot_token: str
     ) -> None:
@@ -101,29 +119,82 @@ class ChatService:
         )
 
     @staticmethod
+    async def send_message(chat_bot_token: str, message_data: MessageSend) -> None:
+        """Отправка сообщения ассистента в канал и обновление диалога"""
+
+        chat_bot = await ChatBot.find_one(ChatBot.secret_token == chat_bot_token)
+        if not chat_bot:
+            raise KeyError(f"ChatBot with chat bot token '{chat_bot_token}' not found")
+
+        dialogue = await Dialogue.find_one(
+            {"chat_bot_id": chat_bot.id, "chat_id": message_data.chat_id}
+        )
+        if not dialogue:
+            dialogue = Dialogue(
+                chat_bot_id=chat_bot.id, chat_id=message_data.chat_id, message_list=[]
+            )
+            await dialogue.insert()
+
+        assistant_message = DialogueMessage(
+            role=MessageRole.ASSISTANT, text=message_data.text
+        )
+
+        dialogue.message_list.append(assistant_message)
+        await dialogue.save()
+
+    @staticmethod
     async def send_message_to_channel(
-        chat_bot_id: ObjectId, chat_id: str, text: str
+        chat_bot_id: ObjectId | str, chat_id: str, text: str
     ) -> None:
+        """Отправляет сообщение во все активные каналы чат-бота"""
         channels = await ChannelService.get_channels_by_chatbot(str(chat_bot_id))
-
         message_data = MessageSend(chat_id=chat_id, text=text)
+        for channel in channels:
+            if channel.is_active:
+                await ChatService._post_to_channel(channel, message_data)
 
+    @staticmethod
+    async def send_message_via_channel(
+        chat_token: str, message_data: MessageSend
+    ) -> None:
+        """Отправить сообщение через конкретный канал (по chat_token) и обновить диалог"""
+        channel = await ChannelService.get_channel_by_token(chat_token)
+        if channel is None:
+            raise KeyError("Invalid chat token")
+
+        dialogue = await Dialogue.find_one(
+            {"chat_bot_id": channel.chat_bot_id, "chat_id": message_data.chat_id}
+        )
+        if not dialogue:
+            dialogue = Dialogue(
+                chat_bot_id=channel.chat_bot_id,
+                chat_id=message_data.chat_id,
+                message_list=[],
+            )
+            await dialogue.insert()
+
+        assistant_message = DialogueMessage(
+            role=MessageRole.ASSISTANT, text=message_data.text
+        )
+        dialogue.message_list.append(assistant_message)
+        await dialogue.save()
+
+        await ChatService._post_to_channel(channel, message_data)
+
+    @staticmethod
+    async def _post_to_channel(channel, message_data: MessageSend) -> None:
         async with httpx.AsyncClient() as client:
-            for channel in channels:
-                if channel.is_active:
-                    try:
-                        await client.post(
-                            str(channel.settings.webhook_url),
-                            json=message_data.model_dump(),
-                            headers={
-                                "chat_authorization": f"Bearer {channel.settings.token}",
-                                "Content-Type": "application/json",
-                            },
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error sending message to channel '{channel.name}': {e}"
-                        )
+            try:
+                await client.post(
+                    str(channel.settings.webhook_url),
+                    json=message_data.model_dump(),
+                    headers={
+                        "Authorization": f"Bearer {channel.settings.token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            except Exception as e:
+                logger.error(f"Error sending message to channel '{channel.name}': {e}")
 
     @staticmethod
     async def get_dialogue_history(chat_bot_id: str) -> list[DialogueMessage]:
