@@ -3,7 +3,7 @@ from pydantic import BaseModel, HttpUrl
 
 
 class ChannelSettings(BaseModel):
-    webhook_url: HttpUrl
+    url: HttpUrl
     token: str
 
 

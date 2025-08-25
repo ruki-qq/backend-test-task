@@ -1,26 +1,30 @@
+import uuid
+
 import httpx
-from bson import ObjectId
-from fastapi import Header, HTTPException
+from fastapi import HTTPException, Request
 from loguru import logger
 
-from app.services.channel_service import ChannelService
-from app.schemas.message import MessageSend, MessageWebhook
-from core.database.models import ChatBot, Dialogue, DialogueMessage, MessageRole
+from app.schemas.message import MessageWebhook
+from core.database.models import (
+    Channel,
+    ChatBot,
+    Dialogue,
+    DialogueMessage,
+    MessageRole,
+)
 from predict.mock_llm_call import mock_llm_call
 
 
 class ChatService:
     @staticmethod
-    async def verify_token(
-        token: str | None = Header(default=None, alias="chat_bot_authorization")
-    ) -> str:
-        """Проверяет токен чат-бота из заголовка chat_bot_authorization"""
+    async def verify_token(request: Request, header_name: str) -> str:
+        """Валидация Bearer токена из предоставленного header'а."""
 
-        header_val = token
-
+        header_val = request.headers.get(header_name)
         if not header_val:
             raise HTTPException(
-                status_code=401, detail="chat_bot_authorization header is required"
+                status_code=401,
+                detail=f"{header_name} header is required",
             )
 
         if not isinstance(header_val, str) or not header_val.startswith("Bearer "):
@@ -33,176 +37,85 @@ class ChatService:
         if not token_value:
             raise ValueError("Token is required")
 
-        return token_value
-
-    @staticmethod
-    async def verify_chat_token(
-        token: str | None = Header(default=None, alias="chat_token")
-    ) -> str:
-        """Проверяет chat_token канала из заголовка chat_token"""
-        header_val = token
-        if not header_val:
-            raise HTTPException(status_code=401, detail="chat_token header is required")
-        if not isinstance(header_val, str) or not header_val.startswith("Bearer "):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid authorization header format, should be Bearer token",
-            )
-        token_value = header_val[7:]
-        if not token_value:
-            raise ValueError("Token is required")
         return token_value
 
     @staticmethod
     async def process_webhook_message(
-        message_data: MessageWebhook, chat_bot_token: str
+        chatbot_token: str,
+        message_data: MessageWebhook,
     ) -> None:
-        chat_bot = await ChatBot.find_one(ChatBot.secret_token == chat_bot_token)
-        if not chat_bot:
-            raise KeyError(f"ChatBot with chat bot token '{chat_bot_token}' not found")
+        """Обработка сообщения, поступившего на webhook"""
 
-        if message_data.message_sender == "employee":
-            return
+        chatbot = await ChatBot.find_one(ChatBot.secret_token == chatbot_token)
+        if not chatbot:
+            raise KeyError(f"ChatBot with chat bot token '{chatbot_token}' not found")
 
-        if message_data.message_id is not None:
-            existing_dialogue = await Dialogue.find_one(
-                {
-                    "chat_bot_id": chat_bot.id,
-                    "chat_id": message_data.chat_id,
-                    "$or": [
-                        {"message_list": {"$elemMatch": {"text": message_data.text}}},
-                        {
-                            "message_list": {
-                                "$elemMatch": {"message_id": message_data.message_id}
-                            }
-                        },
-                    ],
-                }
-            )
-        else:
-            existing_dialogue = await Dialogue.find_one(
-                {
-                    "chat_bot_id": chat_bot.id,
-                    "chat_id": message_data.chat_id,
-                    "message_list": {"$elemMatch": {"text": message_data.text}},
-                }
-            )
-        if existing_dialogue:
-            return
+        channel = await Channel.get(message_data.chat_id)
+        if not channel:
+            raise KeyError(f"Channel with id '{message_data.chat_id}' not found")
 
-        dialogue = await Dialogue.find_one(
-            {"chat_bot_id": chat_bot.id, "chat_id": message_data.chat_id}
-        )
-        if not dialogue:
-            dialogue = Dialogue(
-                chat_bot_id=chat_bot.id, chat_id=message_data.chat_id, message_list=[]
-            )
-            await dialogue.insert()
-
-        user_message = DialogueMessage(
-            role=MessageRole.USER,
+        message = DialogueMessage(
+            role=(
+                MessageRole.USER
+                if message_data.message_sender == "customer"
+                else MessageRole.EMPLOYEE
+            ),
             text=message_data.text,
             message_id=message_data.message_id,
         )
-        dialogue.message_list.append(user_message)
 
-        llm_response = await mock_llm_call(dialogue.message_list)
+        dialogue = await Dialogue.find_one({"chat_id": message_data.chat_id})
 
-        assistant_message = DialogueMessage(
-            role=MessageRole.ASSISTANT, text=llm_response
-        )
-        dialogue.message_list.append(assistant_message)
-        await dialogue.save()
-
-        await ChatService.send_message_to_channel(
-            chat_bot.id, message_data.chat_id, llm_response
-        )
-
-    @staticmethod
-    async def send_message(chat_bot_token: str, message_data: MessageSend) -> None:
-        """Отправка сообщения ассистента в канал и обновление диалога"""
-
-        chat_bot = await ChatBot.find_one(ChatBot.secret_token == chat_bot_token)
-        if not chat_bot:
-            raise KeyError(f"ChatBot with chat bot token '{chat_bot_token}' not found")
-
-        dialogue = await Dialogue.find_one(
-            {"chat_bot_id": chat_bot.id, "chat_id": message_data.chat_id}
-        )
         if not dialogue:
             dialogue = Dialogue(
-                chat_bot_id=chat_bot.id, chat_id=message_data.chat_id, message_list=[]
-            )
-            await dialogue.insert()
-
-        assistant_message = DialogueMessage(
-            role=MessageRole.ASSISTANT, text=message_data.text
-        )
-
-        dialogue.message_list.append(assistant_message)
-        await dialogue.save()
-
-    @staticmethod
-    async def send_message_to_channel(
-        chat_bot_id: ObjectId | str, chat_id: str, text: str
-    ) -> None:
-        """Отправляет сообщение во все активные каналы чат-бота"""
-        channels = await ChannelService.get_channels_by_chatbot(str(chat_bot_id))
-        message_data = MessageSend(chat_id=chat_id, text=text)
-        for channel in channels:
-            if channel.is_active:
-                await ChatService._post_to_channel(channel, message_data)
-
-    @staticmethod
-    async def send_message_via_channel(
-        chat_token: str, message_data: MessageSend
-    ) -> None:
-        """Отправить сообщение через конкретный канал (по chat_token) и обновить диалог"""
-        channel = await ChannelService.get_channel_by_token(chat_token)
-        if channel is None:
-            raise KeyError("Invalid chat token")
-
-        dialogue = await Dialogue.find_one(
-            {"chat_bot_id": channel.chat_bot_id, "chat_id": message_data.chat_id}
-        )
-        if not dialogue:
-            dialogue = Dialogue(
-                chat_bot_id=channel.chat_bot_id,
+                chat_bot_id=chatbot.id,
                 chat_id=message_data.chat_id,
                 message_list=[],
             )
             await dialogue.insert()
+        else:
+
+            # Проверка на повторяющееся сообщение по id
+            message_list = dialogue.message_list
+            for existing_message in message_list:
+                if existing_message.message_id == message.message_id:
+                    dialogue.message_list.append(message)
+                    await dialogue.save()
+                    return
+
+        dialogue.message_list.append(message)
+        await dialogue.save()
+
+        if message.role == MessageRole.EMPLOYEE:
+            return
+
+        await ChatService.post_llm_to_channel(channel, dialogue)
+
+    @staticmethod
+    async def post_llm_to_channel(channel: Channel, dialogue: Dialogue) -> None:
+        """Отправляет ответ от LLM в канал и на url из настроек канала"""
+
+        llm_response = await mock_llm_call(dialogue.message_list)
 
         assistant_message = DialogueMessage(
-            role=MessageRole.ASSISTANT, text=message_data.text
+            message_id=str(uuid.uuid4()),
+            role=MessageRole.ASSISTANT,
+            text=llm_response,
         )
         dialogue.message_list.append(assistant_message)
         await dialogue.save()
 
-        await ChatService._post_to_channel(channel, message_data)
-
-    @staticmethod
-    async def _post_to_channel(channel, message_data: MessageSend) -> None:
         async with httpx.AsyncClient() as client:
             try:
                 await client.post(
-                    str(channel.settings.webhook_url),
-                    json=message_data.model_dump(),
+                    str(channel.settings.url),
+                    json=assistant_message.model_dump(),
                     headers={
-                        "Authorization": f"Bearer {channel.settings.token}",
+                        "x-chat_auth_token": f"Bearer {channel.settings.token}",
                         "Content-Type": "application/json",
                     },
                 )
             except Exception as e:
-                logger.error(f"Error sending message to channel '{channel.name}': {e}")
-
-    @staticmethod
-    async def get_dialogue_history(chat_bot_id: str) -> list[DialogueMessage]:
-        dialogue = await Dialogue.find_one(
-            Dialogue.chat_bot_id == ObjectId(chat_bot_id)
-        )
-
-        if not dialogue:
-            return []
-
-        return dialogue.message_list
+                logger.error(
+                    f"Error sending message to channel '{channel.name}' with url: '{channel.settings.url}': {e}"
+                )

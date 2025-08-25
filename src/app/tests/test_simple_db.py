@@ -1,6 +1,5 @@
 from loguru import logger
 
-
 from app.tests.async_client import with_database_setup
 from core.database.models import ChatBot
 

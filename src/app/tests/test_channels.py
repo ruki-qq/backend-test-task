@@ -14,7 +14,7 @@ def test_create_channel_success():
         channel_data = {
             "name": "Test Channel",
             "chat_bot_id": kwargs["chat_bot_id"],
-            "webhook_url": "https://example.com/webhook",
+            "url": "https://example.com/webhook",
         }
 
         response = await client.post("/api/channels/", json=channel_data)
@@ -23,7 +23,7 @@ def test_create_channel_success():
         data = response.json()
         assert data["name"] == "Test Channel"
         assert data["chat_bot_id"] == kwargs["chat_bot_id"]
-        assert data["webhook_url"] == "https://example.com/webhook"
+        assert data["url"] == "https://example.com/webhook"
         assert data["is_active"] is True
 
     return _test
@@ -37,7 +37,7 @@ def test_create_channel_chatbot_incorrect_id():
         channel_data = {
             "name": "Test Channel",
             "chat_bot_id": "123",
-            "webhook_url": "https://example.com/webhook",
+            "url": "https://example.com/webhook",
             "token": "channel_token_123",
         }
 
@@ -45,7 +45,8 @@ def test_create_channel_chatbot_incorrect_id():
 
         assert response.status_code == 422
         assert (
-            f"'{channel_data["chat_bot_id"]}' is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string"
+            f"'{channel_data['chat_bot_id']}' is not a valid ObjectId, "
+            "it must be a 12-byte input or a 24-character hex string"
             in response.json()["detail"]
         )
 
@@ -60,7 +61,7 @@ def test_create_channel_chatbot_type_error():
         channel_data = {
             "name": 3,
             "chat_bot_id": kwargs["chat_bot_id"],
-            "webhook_url": "https://example.com/webhook",
+            "url": "https://example.com/webhook",
             "token": "channel_token_123",
         }
 
@@ -87,7 +88,7 @@ def test_create_channel_chatbot_not_found():
         channel_data = {
             "name": "Test Channel",
             "chat_bot_id": str(ObjectId()),
-            "webhook_url": "https://example.com/webhook",
+            "url": "https://example.com/webhook",
             "token": "channel_token_123",
         }
 
@@ -111,7 +112,7 @@ def test_get_channels_by_chatbot():
             name="Channel 1",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example1.com/webhook", token="token1"
+                url="https://example1.com/webhook", token="token1"
             ),
             is_active=True,
         )
@@ -121,7 +122,7 @@ def test_get_channels_by_chatbot():
             name="Channel 2",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example2.com/webhook", token="token2"
+                url="https://example2.com/webhook", token="token2"
             ),
             is_active=True,
         )
@@ -149,7 +150,7 @@ def test_get_channels_not_active():
             name="Channel 1",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example1.com/webhook", token="token1"
+                url="https://example1.com/webhook", token="token1"
             ),
             is_active=False,
         )
@@ -159,7 +160,7 @@ def test_get_channels_not_active():
             name="Channel 2",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example2.com/webhook", token="token2"
+                url="https://example2.com/webhook", token="token2"
             ),
             is_active=True,
         )
@@ -186,7 +187,7 @@ def test_get_channels_by_chatbot_chat_bot_not_found():
             name="Channel 1",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example1.com/webhook", token="token1"
+                url="https://example1.com/webhook", token="token1"
             ),
             is_active=True,
         )
@@ -196,7 +197,7 @@ def test_get_channels_by_chatbot_chat_bot_not_found():
             name="Channel 2",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example2.com/webhook", token="token2"
+                url="https://example2.com/webhook", token="token2"
             ),
             is_active=True,
         )
@@ -224,7 +225,7 @@ def test_get_channels_by_chatbot_incorrect_id():
             name="Channel 1",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example1.com/webhook", token="token1"
+                url="https://example1.com/webhook", token="token1"
             ),
             is_active=True,
         )
@@ -234,7 +235,7 @@ def test_get_channels_by_chatbot_incorrect_id():
             name="Channel 2",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example2.com/webhook", token="token2"
+                url="https://example2.com/webhook", token="token2"
             ),
             is_active=True,
         )
@@ -261,7 +262,7 @@ def test_get_channel_by_id():
             name="Test Channel",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example.com/webhook", token="token123"
+                url="https://example.com/webhook", token="token123"
             ),
             is_active=True,
         )
@@ -320,7 +321,7 @@ def test_update_channel():
             name="Test Channel",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example.com/webhook", token="token123"
+                url="https://example.com/webhook", token="token123"
             ),
             is_active=True,
         )
@@ -347,7 +348,7 @@ def test_delete_channel():
             name="Test Channel",
             chat_bot_id=kwargs["chat_bot_id"],
             settings=ChannelSettings(
-                webhook_url="https://example.com/webhook", token="token123"
+                url="https://example.com/webhook", token="token123"
             ),
             is_active=True,
         )

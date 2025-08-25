@@ -1,9 +1,14 @@
-import asyncio
 import argparse
+import asyncio
 import secrets
 import sys
 from pathlib import Path
 from typing import List
+
+from loguru import logger
+
+from core.database.models import ChatBot
+from core.database.registry import initialize_database
 
 
 def _ensure_src_on_sys_path() -> None:
@@ -16,13 +21,8 @@ def _ensure_src_on_sys_path() -> None:
 _ensure_src_on_sys_path()
 
 
-from core.database.registry import initialize_database
-from core.database.models import ChatBot
-
-
 async def create_chatbots(names: List[str]) -> List[ChatBot]:
     created: List[ChatBot] = []
-
     for name in names:
         existing = await ChatBot.find_one(ChatBot.name == name)
         if existing:
@@ -49,7 +49,7 @@ async def async_main(args: argparse.Namespace) -> None:
 
     if args.clear:
         deleted = await clear_chatbots()
-        print(f"Deleted {deleted} existing chatbots")
+        logger.debug(f"Deleted {deleted} existing chatbots")
 
     names: List[str]
     if args.names:
@@ -61,9 +61,9 @@ async def async_main(args: argparse.Namespace) -> None:
 
     bots = await create_chatbots(names)
 
-    print("Created/Found chatbots:")
+    logger.debug("Created/Found chatbots:")
     for b in bots:
-        print(f"- name={b.name} id={b.id} secret_token={b.secret_token}")
+        logger.debug(f"- name={b.name} id={b.id} secret_token={b.secret_token}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

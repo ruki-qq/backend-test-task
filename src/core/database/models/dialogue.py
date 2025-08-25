@@ -8,12 +8,13 @@ class MessageRole(StrEnum):
     ASSISTANT = auto()
     SYSTEM = auto()
     USER = auto()
+    EMPLOYEE = auto()
 
 
 class DialogueMessage(BaseModel):
     role: MessageRole
     text: str
-    message_id: str | None = None
+    message_id: str
 
 
 class Dialogue(Document):

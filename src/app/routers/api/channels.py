@@ -3,7 +3,6 @@ from typing import List
 from bson.errors import InvalidId
 from fastapi import APIRouter, HTTPException, Response, status
 
-
 from app.schemas.channel import ChannelCreate, ChannelResponse, ChannelUpdate
 from app.services.channel_service import ChannelService
 from app.services.chat_service import ChatService

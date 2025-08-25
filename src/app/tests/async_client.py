@@ -23,6 +23,7 @@ def create_test_client() -> AsyncClient:
 def with_database_and_client(func: Callable) -> Callable:
     """
     Декоратор, который инициализирует БД и создает асинхронного клиента.
+    (Написан, т.к. были проблемы с event_loop из-за несовместимости(судя по гуглу) между pytest_asyncio и beanie.
 
     Использование:
         @with_database_and_client

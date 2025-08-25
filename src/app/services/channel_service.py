@@ -1,5 +1,4 @@
 from bson import ObjectId
-from bson.errors import InvalidId
 
 from app.schemas.channel import ChannelCreate, ChannelResponse, ChannelUpdate
 from core.database.models import Channel, ChatBot
@@ -74,13 +73,13 @@ class ChannelService:
 
         update_dict = update_data.model_dump(exclude_unset=True)
 
-        if "webhook_url" in update_dict or "token" in update_dict:
-            if update_dict.get("webhook_url"):
-                channel.settings.webhook_url = update_dict.get("webhook_url")
+        if "url" in update_dict or "token" in update_dict:
+            if update_dict.get("url"):
+                channel.settings.url = update_dict.get("url")
             if update_dict.get("token"):
                 channel.settings.token = update_dict.get("token")
 
-            update_dict.pop("webhook_url", None)
+            update_dict.pop("url", None)
             update_dict.pop("token", None)
 
         for field, value in update_dict.items():

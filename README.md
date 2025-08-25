@@ -90,7 +90,7 @@ SERVER__WORKERS=1
     {
       "name": "str",
       "chat_bot_id": "<ObjectId строкой>",
-      "webhook_url": "https://example.com/webhook",
+      "url": "https://example.com/webhook",
       "is_active": true  // необязательно, по умолчанию true
     }
   - Response JSON:
@@ -98,7 +98,7 @@ SERVER__WORKERS=1
       "id": "<id канала>",
       "name": "...",
       "chat_bot_id": "<id бота>",
-      "webhook_url": "https://...",
+      "url": "https://...",
       "is_active": true,
       "token": "<автосгенерированный токен канала>"
     }
@@ -111,7 +111,7 @@ SERVER__WORKERS=1
   - Получить канал по id
 
 - PUT /api/channels/{channel_id}
-  - Обновить поля: name, webhook_url, is_active
+  - Обновить поля: name, url, is_active
 
 - DELETE /api/channels/{channel_id}
   - Удалить канал
@@ -144,7 +144,7 @@ SERVER__WORKERS=1
 
 
 ### 3) Формат исходящих сообщений в каналы
-Для каждого активного канала, подключённого к боту, выполняется POST на URL: channel.settings.webhook_url
+Для каждого активного канала, подключённого к боту, выполняется POST на URL: channel.settings.url
 
 - Заголовки:
   - chat_authorization: Bearer <token_канала>
@@ -168,7 +168,7 @@ SERVER__WORKERS=1
 - Channel
   - name: str
   - chat_bot_id: ObjectId
-  - settings: { webhook_url: HttpUrl, token: str }
+  - settings: { url: HttpUrl, token: str }
   - is_active: bool = true
 
 - Dialogue
