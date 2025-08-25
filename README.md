@@ -24,18 +24,21 @@
 - Подключение нескольких каналов к одному чат‑боту
 - Приём входящих сообщений из канала через вебхук
 - Сохранение контекста диалогов по (chat_bot_id + chat_id)
-- Игнорирование сообщений от сотрудников
-- Защита от повторной обработки одного и того же сообщения (по text и/или message_id)
-- Отправка ответов чат‑бота во все активные каналы, подключённые к боту
+- Игнорирование сообщений от сотрудников (employee)
+- Защита от повторной обработки одного и того же сообщения (по message_id)
+- Отправка ответов чат‑бота в канал, откуда пришло сообщение
 - Мок-LLM (mock_llm_call) имитирует ответ ассистента
+- Гибкая система логирования с настраиваемыми обработчиками
+- Автоматическая генерация message_id для сообщений без идентификатора
 
 
 ## Архитектура и стек
 - FastAPI — REST API
 - Beanie (MongoDB ODM) + Motor — работа с MongoDB
 - Pydantic/Pydantic Settings — схемы и конфигурация
-- Loguru — логирование
-- Uvicorn — сервер
+- Loguru — расширенное логирование с кастомными обработчиками
+- Uvicorn — сервер с настраиваемой конфигурацией логирования
+- httpx — асинхронные HTTP-клиенты для отправки сообщений в каналы
 
 
 ## Установка и запуск
@@ -43,10 +46,10 @@
 
 1) Клонирование и установка зависимостей
 
-```
+```bash
 python -m venv .venv
 source .venv/bin/activate
-poetry install --sync.
+poetry install --sync
 ```
 
 2) Настройка окружения (.env)
@@ -55,7 +58,7 @@ poetry install --sync.
 
 3) Запуск приложения
 
-```
+```bash
 python -m src.main
 ```
 
@@ -72,7 +75,7 @@ python -m src.main
 - SERVER__WORKERS — количество воркеров uvicorn (по умолчанию 1)
 
 Пример .env:
-```
+```env
 MONGO__URL=mongodb://localhost:27017
 MONGO__DB_NAME=chatbot
 SERVER__WORKERS=1
@@ -87,13 +90,16 @@ SERVER__WORKERS=1
 - POST /api/channels/
   - Создать канал и привязать его к чат-боту
   - Request JSON:
+    ```json
     {
       "name": "str",
       "chat_bot_id": "<ObjectId строкой>",
       "url": "https://example.com/webhook",
       "is_active": true  // необязательно, по умолчанию true
     }
+    ```
   - Response JSON:
+    ```json
     {
       "id": "<id канала>",
       "name": "...",
@@ -102,6 +108,7 @@ SERVER__WORKERS=1
       "is_active": true,
       "token": "<автосгенерированный токен канала>"
     }
+    ```
 
 - GET /api/channels/
   - Получить список каналов
@@ -123,81 +130,103 @@ SERVER__WORKERS=1
 ### 2) Webhook приёма сообщений — POST /api/webhook/new_message
 
 - Заголовок авторизации (токен чат‑бота):
-  - chat_bot_authorization: Bearer <секретный_токен_бота>
+  - x-chatbot_auth_token: Bearer <секретный_токен_бота>
 - Тело запроса (JSON):
+  ```json
   {
-    "message_id": "str | null",  // необязательно
-    "chat_id": "str",            // идентификатор чата в канале
+    "message_id": "str | null",  // необязательно, генерируется автоматически если не указан
+    "chat_id": "str",            // идентификатор канала
     "text": "str",
     "message_sender": "customer" | "employee"
   }
-- Ответ: { "status": "Message processed successfully" }
+  ```
+- Ответ: `{ "status": "Message processed successfully" }`
 
 Поведение:
-- Если message_sender == "employee" — сообщение игнорируется
-- Если сообщение уже обрабатывалось (совпадение по text и/или message_id) — повторная обработка игнорируется
-- Для новых сообщений:
+- Если message_sender == "employee" — сообщение игнорируется, LLM-ответ не генерируется
+- Если сообщение уже обрабатывалось (совпадение по message_id) — повторная обработка игнорируется
+- Для новых сообщений от клиентов:
   - Сообщение добавляется в контекст диалога (роль USER)
   - Генерируется ответ ассистента (mock_llm_call)
   - Ответ добавляется в контекст диалога (роль ASSISTANT)
-  - Ответ отправляется в подключённые активные каналы бота
+  - Ответ отправляется в канал, откуда пришло сообщение
 
 
 ### 3) Формат исходящих сообщений в каналы
-Для каждого активного канала, подключённого к боту, выполняется POST на URL: channel.settings.url
+Для канала, откуда пришло сообщение, выполняется POST на URL: channel.settings.url
 
 - Заголовки:
-  - chat_authorization: Bearer <token_канала>
+  - x-chat_auth_token: Bearer <token_канала>
   - Content-Type: application/json
 - Тело:
+  ```json
   {
-    "event_type": "new_message",
-    "chat_id": "str",
+    "message_id": "str",
+    "role": "ASSISTANT",
     "text": "str"
   }
+  ```
 
 Примечание: токен канала выдаётся при создании канала и хранится в channel.settings.token
 
 
 ## Модели данных (MongoDB)
 
-- ChatBot
-  - name: str
-  - secret_token: str
+### ChatBot
+- name: str
+- secret_token: str
 
-- Channel
-  - name: str
-  - chat_bot_id: ObjectId
-  - settings: { url: HttpUrl, token: str }
-  - is_active: bool = true
+### Channel
+- name: str
+- chat_bot_id: ObjectId
+- settings: ChannelSettings
+  - url: HttpUrl
+  - token: str
+- is_active: bool = true
 
-- Dialogue
-  - chat_bot_id: ObjectId
-  - chat_id: str
-  - message_list: DialogueMessage[]
+### Dialogue
+- chat_bot_id: ObjectId
+- chat_id: str
+- message_list: DialogueMessage[]
 
-- DialogueMessage
-  - role: "ASSISTANT" | "SYSTEM" | "USER"
-  - text: str
-  - message_id: str | null
+### DialogueMessage
+- role: "ASSISTANT" | "SYSTEM" | "USER" | "EMPLOYEE"
+- text: str
+- message_id: str
+
+### MessageRole (Enum)
+- ASSISTANT — сообщения от бота/ассистента
+- SYSTEM — системные сообщения
+- USER — сообщения от клиентов
+- EMPLOYEE — сообщения от сотрудников
 
 
 ## Логика обработки сообщений
 1) Вебхук получает входящее сообщение
-2) Проверяется токен бота по заголовку chat_bot_authorization
-3) Сообщения от сотрудников (employee) игнорируются
-4) Проверка на дубликаты: по тексту и (если задан) по message_id
-5) Сообщение пользователя добавляется в историю диалога
-6) Вызывается mock_llm_call для генерации ответа ассистента
-7) Ответ ассистента сохраняется в диалог
-8) Ответ отправляется в подключённые активные каналы данного бота
+2) Проверяется токен бота по заголовку x-chatbot_auth_token
+3) Если message_id не указан, генерируется автоматически (UUID)
+4) Сообщения от сотрудников (employee) игнорируются, LLM-ответ не генерируется
+5) Проверка на дубликаты: по message_id
+6) Сообщение пользователя добавляется в историю диалога
+7) Вызывается mock_llm_call для генерации ответа ассистента
+8) Ответ ассистента сохраняется в диалог
+9) Ответ отправляется в канал, откуда пришло сообщение (по channel.settings.url)
+
+
+## Система логирования
+Приложение использует расширенную систему логирования на базе Loguru:
+
+- Настраиваемые обработчики для разных уровней логирования
+- Интеграция с Uvicorn для логирования HTTP-запросов
+- Структурированное логирование с контекстом
+- Возможность настройки форматов и выходных потоков
 
 
 ## Тестирование
 1) Убедитесь, что MongoDB запущен
 2) Запуск тестов (используется отдельная БД из настроек):
 
-```
+```bash
 MONGO__URL=mongodb://localhost:27017 MONGO__DB_NAME=chatbot_test python -m pytest -v
 ```
 
@@ -206,6 +235,7 @@ MONGO__URL=mongodb://localhost:27017 MONGO__DB_NAME=chatbot_test python -m pytes
 - Фильтрации каналов
 - Webhook: успешная обработка, игнорирование сообщений от сотрудников, проверка токена/заголовков, защита от дублей
 - Наличие основных роутов
+- Обработка ошибок и валидация данных
 
 
 ## Структура проекта
@@ -218,13 +248,17 @@ src/
 │  │     ├─ channels.py         # API каналов
 │  │     └─ webhook.py          # Webhook приёма сообщений
 │  ├─ schemas/                  # Pydantic-схемы
-│  └─ services/
-│     ├─ channel_service.py     # Логика каналов
-│     └─ chat_service.py        # Логика чатов/диалогов/рассылок
+│  ├─ services/
+│  │  ├─ channel_service.py     # Логика каналов
+│  │  └─ chat_service.py        # Логика чатов/диалогов/рассылок
+│  └─ tests/                    # Тесты приложения
 ├─ core/
 │  ├─ database/
 │  │  ├─ models/                # Модели Beanie
 │  │  └─ registry.py            # Инициализация Mongo
+│  ├─ logs/                     # Система логирования
+│  │  ├─ handlers.py            # Обработчики логов
+│  │  └─ __init__.py            # Конфигурация логирования
 │  └─ settings_model.py         # Настройки приложения
 ├─ predict/
 │  └─ mock_llm_call.py          # Мок LLM вызова
